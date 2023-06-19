@@ -205,6 +205,9 @@ type Response struct {
 // Typically callers will instead want to create the fully marshalled JSON-RPC
 // response to send over the wire with the MarshalResponse function.
 func NewResponse(rpcVersion RPCVersion, id interface{}, marshalledResult []byte, rpcErr *RPCError) (*Response, error) {
+	if rpcVersion == "" {
+		rpcVersion = RpcVersion1
+	}
 	if !rpcVersion.IsValid() {
 		str := fmt.Sprintf("rpcversion '%s' is invalid", rpcVersion)
 		return nil, makeError(ErrInvalidType, str)
@@ -228,6 +231,9 @@ func NewResponse(rpcVersion RPCVersion, id interface{}, marshalledResult []byte,
 // a JSON-RPC response byte slice that is suitable for transmission to a
 // JSON-RPC client.
 func MarshalResponse(rpcVersion RPCVersion, id interface{}, result interface{}, rpcErr *RPCError) ([]byte, error) {
+	if rpcVersion == "" {
+		rpcVersion = RpcVersion1
+	}
 	if !rpcVersion.IsValid() {
 		str := fmt.Sprintf("rpcversion '%s' is invalid", rpcVersion)
 		return nil, makeError(ErrInvalidType, str)
