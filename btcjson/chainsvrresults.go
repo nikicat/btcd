@@ -911,3 +911,15 @@ type TestMempoolAcceptFees struct {
 	// NOTE: this field only exists in bitcoind v25.0 and above.
 	EffectiveIncludes []string `json:"effective-includes"`
 }
+
+type SubmitPackageResult struct {
+	TxResults            map[string]SubmitPackageTxResult `json:"tx-results"`
+	ReplacedTransactions []string                         `json:"replaced-transactions"`
+}
+
+type SubmitPackageTxResult struct {
+	TxId       string                 `json:"txid"`
+	OtherWtxId string                 `json:"other-wtxid"`
+	VSize      int32                  `json:"vsize"`
+	Fees       *TestMempoolAcceptFees `json:"fees"`
+}

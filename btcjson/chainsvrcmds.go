@@ -1064,6 +1064,18 @@ func NewTestMempoolAcceptCmd(rawTxns []string,
 	}
 }
 
+type SubmitPackageCmd struct {
+	// An array of hex strings of raw transactions.
+	RawTxns []string
+}
+
+func NewSubmitPackageCmd(rawTxns []string) *SubmitPackageCmd {
+
+	return &SubmitPackageCmd{
+		RawTxns: rawTxns,
+	}
+}
+
 func init() {
 	// No special flags for commands in this file.
 	flags := UsageFlag(0)
@@ -1125,4 +1137,5 @@ func init() {
 	MustRegisterCmd("verifymessage", (*VerifyMessageCmd)(nil), flags)
 	MustRegisterCmd("verifytxoutproof", (*VerifyTxOutProofCmd)(nil), flags)
 	MustRegisterCmd("testmempoolaccept", (*TestMempoolAcceptCmd)(nil), flags)
+	MustRegisterCmd("submitpackage", (*SubmitPackageCmd)(nil), flags)
 }

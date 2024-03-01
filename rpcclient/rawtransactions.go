@@ -1012,3 +1012,72 @@ func (c *Client) TestMempoolAccept(txns []*wire.MsgTx,
 
 	return c.TestMempoolAcceptAsync(txns, maxFeeRate).Receive()
 }
+
+type FutureSubmitPackageResult chan *Response
+
+// Receive waits for the Response promised by the future and returns the
+// response from TestMempoolAccept.
+func (r FutureSubmitPackageResult) Receive() (*btcjson.SubmitPackageResult, error) {
+
+	response, err := ReceiveFuture(r)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unmarshal as an array of TestMempoolAcceptResult items.
+	var result btcjson.SubmitPackageResult
+
+	err = json.Unmarshal(response, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (c *Client) SubmitPackageAsync(txns []*wire.MsgTx) FutureSubmitPackageResult {
+
+	// Exit early if an empty array of transactions is provided.
+	if len(txns) == 0 {
+		err := fmt.Errorf("%w: no transactions provided",
+			ErrInvalidParam)
+		return newFutureError(err)
+	}
+
+	// Iterate all the transactions and turn them into hex strings.
+	rawTxns := make([]string, 0, len(txns))
+	for _, tx := range txns {
+		// Serialize the transaction and convert to hex string.
+		buf := bytes.NewBuffer(make([]byte, 0, tx.SerializeSize()))
+
+		// TODO(yy): add similar checks found in `BtcDecode` to
+		// `BtcEncode` - atm it just serializes bytes without any
+		// bitcoin-specific checks.
+		if err := tx.Serialize(buf); err != nil {
+			err = fmt.Errorf("%w: %v", ErrInvalidParam, err)
+			return newFutureError(err)
+		}
+
+		rawTx := hex.EncodeToString(buf.Bytes())
+		rawTxns = append(rawTxns, rawTx)
+
+		// Sanity check the provided tx is valid, which can be removed
+		// once we have similar checks added in `BtcEncode`.
+		//
+		// NOTE: must be performed after buf.Bytes is copied above.
+		//
+		// TODO(yy): remove it once the above TODO is addressed.
+		if err := tx.Deserialize(buf); err != nil {
+			err = fmt.Errorf("%w: %v", ErrInvalidParam, err)
+			return newFutureError(err)
+		}
+	}
+	cmd := btcjson.NewSubmitPackageCmd(rawTxns)
+
+	return c.SendCmd(cmd)
+}
+
+func (c *Client) SubmitPackage(txns []*wire.MsgTx) (*btcjson.SubmitPackageResult, error) {
+
+	return c.SubmitPackageAsync(txns).Receive()
+}
