@@ -92,6 +92,9 @@ const (
 	requestRetryInterval = time.Millisecond * 500
 )
 
+var HttpPostRetries = 10
+var CookieCheckTimeout = 30 * time.Second
+
 // jsonRequest holds information about a json request that is used to properly
 // detect, interpret, and deliver a reply to it.
 type jsonRequest struct {
@@ -812,8 +815,7 @@ func (c *Client) handleSendPostMessage(jReq *jsonRequest) {
 		httpResponse *http.Response
 	)
 
-	tries := 10
-	for i := 0; i < tries; i++ {
+	for i := 0; i < HttpPostRetries; i++ {
 		var httpReq *http.Request
 
 		bodyReader := bytes.NewReader(jReq.marshalledJSON)
@@ -839,7 +841,7 @@ func (c *Client) handleSendPostMessage(jReq *jsonRequest) {
 		httpResponse, err = c.httpClient.Do(httpReq)
 
 		// Quit the retry loop on success or if we can't retry anymore.
-		if err == nil || i == tries-1 {
+		if err == nil || i == HttpPostRetries-1 {
 			break
 		}
 
@@ -1333,7 +1335,7 @@ func (config *ConnConfig) getAuth() (username, passphrase string, err error) {
 
 // retrieveCookie returns the cookie username and passphrase.
 func (config *ConnConfig) retrieveCookie() (username, passphrase string, err error) {
-	if !config.cookieLastCheckTime.IsZero() && time.Now().Before(config.cookieLastCheckTime.Add(30*time.Second)) {
+	if !config.cookieLastCheckTime.IsZero() && time.Now().Before(config.cookieLastCheckTime.Add(CookieCheckTimeout)) {
 		return config.cookieLastUser, config.cookieLastPass, config.cookieLastErr
 	}
 
