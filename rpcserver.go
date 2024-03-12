@@ -553,60 +553,69 @@ func handleCreateRawTransaction(s *rpcServer, cmd interface{}, closeChan <-chan 
 	// Add all transaction outputs to the transaction after performing
 	// some validity checks.
 	params := s.cfg.ChainParams
-	for encodedAddr, amount := range c.Amounts {
-		// Ensure amount is in the valid range for monetary amounts.
-		if amount <= 0 || amount*btcutil.SatoshiPerBitcoin > btcutil.MaxSatoshi {
-			return nil, &btcjson.RPCError{
-				Code:    btcjson.ErrRPCType,
-				Message: "Invalid amount",
+	for _, output := range c.Outputs {
+		for encodedAddr, amount_ := range output {
+			// Ensure amount is in the valid range for monetary amounts.
+			amount, ok := amount_.(float64)
+			if !ok {
+				return nil, &btcjson.RPCError{
+					Code:    btcjson.ErrRPCType,
+					Message: "Invalid amount type",
+				}
 			}
-		}
-
-		// Decode the provided address.
-		addr, err := btcutil.DecodeAddress(encodedAddr, params)
-		if err != nil {
-			return nil, &btcjson.RPCError{
-				Code:    btcjson.ErrRPCInvalidAddressOrKey,
-				Message: "Invalid address or key: " + err.Error(),
+			if amount <= 0 || amount*btcutil.SatoshiPerBitcoin > btcutil.MaxSatoshi {
+				return nil, &btcjson.RPCError{
+					Code:    btcjson.ErrRPCType,
+					Message: "Invalid amount",
+				}
 			}
-		}
 
-		// Ensure the address is one of the supported types and that
-		// the network encoded with the address matches the network the
-		// server is currently on.
-		switch addr.(type) {
-		case *btcutil.AddressPubKeyHash:
-		case *btcutil.AddressScriptHash:
-		default:
-			return nil, &btcjson.RPCError{
-				Code:    btcjson.ErrRPCInvalidAddressOrKey,
-				Message: "Invalid address or key",
+			// Decode the provided address.
+			addr, err := btcutil.DecodeAddress(encodedAddr, params)
+			if err != nil {
+				return nil, &btcjson.RPCError{
+					Code:    btcjson.ErrRPCInvalidAddressOrKey,
+					Message: "Invalid address or key: " + err.Error(),
+				}
 			}
-		}
-		if !addr.IsForNet(params) {
-			return nil, &btcjson.RPCError{
-				Code: btcjson.ErrRPCInvalidAddressOrKey,
-				Message: "Invalid address: " + encodedAddr +
-					" is for the wrong network",
+
+			// Ensure the address is one of the supported types and that
+			// the network encoded with the address matches the network the
+			// server is currently on.
+			switch addr.(type) {
+			case *btcutil.AddressPubKeyHash:
+			case *btcutil.AddressScriptHash:
+			default:
+				return nil, &btcjson.RPCError{
+					Code:    btcjson.ErrRPCInvalidAddressOrKey,
+					Message: "Invalid address or key",
+				}
 			}
-		}
+			if !addr.IsForNet(params) {
+				return nil, &btcjson.RPCError{
+					Code: btcjson.ErrRPCInvalidAddressOrKey,
+					Message: "Invalid address: " + encodedAddr +
+						" is for the wrong network",
+				}
+			}
 
-		// Create a new script which pays to the provided address.
-		pkScript, err := txscript.PayToAddrScript(addr)
-		if err != nil {
-			context := "Failed to generate pay-to-address script"
-			return nil, internalRPCError(err.Error(), context)
-		}
+			// Create a new script which pays to the provided address.
+			pkScript, err := txscript.PayToAddrScript(addr)
+			if err != nil {
+				context := "Failed to generate pay-to-address script"
+				return nil, internalRPCError(err.Error(), context)
+			}
 
-		// Convert the amount to satoshi.
-		satoshi, err := btcutil.NewAmount(amount)
-		if err != nil {
-			context := "Failed to convert amount"
-			return nil, internalRPCError(err.Error(), context)
-		}
+			// Convert the amount to satoshi.
+			satoshi, err := btcutil.NewAmount(amount)
+			if err != nil {
+				context := "Failed to convert amount"
+				return nil, internalRPCError(err.Error(), context)
+			}
 
-		txOut := wire.NewTxOut(int64(satoshi), pkScript)
-		mtx.AddTxOut(txOut)
+			txOut := wire.NewTxOut(int64(satoshi), pkScript)
+			mtx.AddTxOut(txOut)
+		}
 	}
 
 	// Set the Locktime, if given.

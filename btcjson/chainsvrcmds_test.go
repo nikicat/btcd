@@ -52,13 +52,13 @@ func TestChainSvrCmds(t *testing.T) {
 				txInputs := []btcjson.TransactionInput{
 					{Txid: "123", Vout: 1},
 				}
-				amounts := map[string]float64{"456": .0123}
-				return btcjson.NewCreateRawTransactionCmd(txInputs, amounts, nil)
+				outputs := []map[string]interface{}{{"456": .0123}}
+				return btcjson.NewCreateRawTransactionCmd(txInputs, outputs, nil)
 			},
 			marshalled: `{"jsonrpc":"1.0","method":"createrawtransaction","params":[[{"txid":"123","vout":1}],{"456":0.0123}],"id":1}`,
 			unmarshalled: &btcjson.CreateRawTransactionCmd{
 				Inputs:  []btcjson.TransactionInput{{Txid: "123", Vout: 1}},
-				Amounts: map[string]float64{"456": .0123},
+				Outputs: []map[string]interface{}{{"456": .0123}},
 			},
 		},
 		{
@@ -67,13 +67,13 @@ func TestChainSvrCmds(t *testing.T) {
 				return btcjson.NewCmd("createrawtransaction", `[]`, `{"456":0.0123}`)
 			},
 			staticCmd: func() interface{} {
-				amounts := map[string]float64{"456": .0123}
-				return btcjson.NewCreateRawTransactionCmd(nil, amounts, nil)
+				outputs := []map[string]interface{}{{"456": .0123}}
+				return btcjson.NewCreateRawTransactionCmd(nil, outputs, nil)
 			},
 			marshalled: `{"jsonrpc":"1.0","method":"createrawtransaction","params":[[],{"456":0.0123}],"id":1}`,
 			unmarshalled: &btcjson.CreateRawTransactionCmd{
 				Inputs:  []btcjson.TransactionInput{},
-				Amounts: map[string]float64{"456": .0123},
+				Outputs: []map[string]interface{}{{"456": .0123}},
 			},
 		},
 		{
@@ -86,13 +86,13 @@ func TestChainSvrCmds(t *testing.T) {
 				txInputs := []btcjson.TransactionInput{
 					{Txid: "123", Vout: 1},
 				}
-				amounts := map[string]float64{"456": .0123}
+				amounts := []map[string]interface{}{{"456": .0123}}
 				return btcjson.NewCreateRawTransactionCmd(txInputs, amounts, btcjson.Int64(12312333333))
 			},
 			marshalled: `{"jsonrpc":"1.0","method":"createrawtransaction","params":[[{"txid":"123","vout":1}],{"456":0.0123},12312333333],"id":1}`,
 			unmarshalled: &btcjson.CreateRawTransactionCmd{
 				Inputs:   []btcjson.TransactionInput{{Txid: "123", Vout: 1}},
-				Amounts:  map[string]float64{"456": .0123},
+				Outputs:  []map[string]interface{}{{"456": .0123}},
 				LockTime: btcjson.Int64(12312333333),
 			},
 		},
