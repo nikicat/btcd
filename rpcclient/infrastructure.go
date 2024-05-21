@@ -7,6 +7,7 @@ package rpcclient
 import (
 	"bytes"
 	"container/list"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -23,6 +24,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
@@ -103,6 +105,7 @@ type jsonRequest struct {
 	cmd            interface{}
 	marshalledJSON []byte
 	responseChan   chan *Response
+	ctx            context.Context
 }
 
 // BackendVersion represents the version of the backend the client is currently
@@ -218,6 +221,7 @@ type Client struct {
 	disconnect      chan struct{}
 	shutdown        chan struct{}
 	wg              sync.WaitGroup
+	Ctx             context.Context
 }
 
 // NextID returns the next id to be used when sending a JSON-RPC message.  This
@@ -837,13 +841,11 @@ func (c *Client) handleSendPostMessage(jReq *jsonRequest) {
 			return
 		}
 		httpReq.SetBasicAuth(user, pass)
+		if jReq.ctx != nil {
+			httpReq = httpReq.WithContext(jReq.ctx)
+		}
 
 		httpResponse, err = c.httpClient.Do(httpReq)
-
-		// Quit the retry loop on success or if we can't retry anymore.
-		if err == nil || i == HttpPostRetries-1 {
-			break
-		}
 
 		// Save the last error for the case where we backoff further,
 		// retry and get an invalid response but no error. If this
@@ -851,14 +853,19 @@ func (c *Client) handleSendPostMessage(jReq *jsonRequest) {
 		// message that we pass back to the caller.
 		lastErr = err
 
+		// Quit the retry loop on success or if we can't retry anymore.
+		if err == nil || i == HttpPostRetries-1 {
+			break
+		}
+
 		// Backoff sleep otherwise.
 		backoff = requestRetryInterval * time.Duration(i+1)
 		if backoff > time.Minute {
 			backoff = time.Minute
 		}
 		log.Debugf("Failed command [%s] with id %d attempt %d."+
-			" Retrying in %v... \n", jReq.method, jReq.id,
-			i, backoff)
+			"Err: %v. Retrying in %v... \n", jReq.method, jReq.id,
+			i, err, backoff)
 
 		select {
 		case <-time.After(backoff):
@@ -1071,6 +1078,7 @@ func (c *Client) SendCmd(cmd interface{}) chan *Response {
 		cmd:            cmd,
 		marshalledJSON: marshalledJSON,
 		responseChan:   responseChan,
+		ctx:            c.Ctx,
 	}
 
 	c.sendRequest(jReq)
@@ -1383,12 +1391,74 @@ func newHTTPClient(config *ConnConfig) (*http.Client, error) {
 
 	client := http.Client{
 		Transport: &http.Transport{
-			Proxy:           proxyFunc,
-			TLSClientConfig: tlsConfig,
+			Proxy:              proxyFunc,
+			TLSClientConfig:    tlsConfig,
+			DisableCompression: true,
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				dialer := net.Dialer{
+					ControlContext: func(ctx context.Context, network string, address string, c syscall.RawConn) error {
+						if logger, ok := ctx.Value("logger").(loggerFn); ok {
+							logger(ctx, "control", "network", network, "address", address)
+						}
+						return nil
+					},
+				}
+				logger, _ := ctx.Value("logger").(loggerFn)
+				var conn net.Conn
+				var err error
+				for i := 0; i < HttpPostRetries; i++ {
+					conn, err = dialer.DialContext(ctx, network, addr)
+					if err != nil {
+						if errors.Is(err, syscall.ECONNRESET) {
+							if logger != nil {
+								logger(ctx, "ECONNRESET on dial, retrying", "remote", addr, "err", err, "retry", i)
+							}
+							continue
+						}
+						break
+					}
+				}
+				if logger != nil {
+					local := ""
+					if conn != nil {
+						local = conn.LocalAddr().String()
+					}
+					logger(ctx, "dial", "network", network, "remote", addr, "local", local, "err", err)
+					if conn != nil {
+						conn = loggerConn{conn, func(ctx context.Context, msg string, args ...interface{}) {
+							args = append(args, "local", local, "remote", addr)
+							logger(ctx, msg, args...)
+						}, ctx}
+					}
+				}
+				return conn, err
+			},
 		},
 	}
 
 	return &client, nil
+}
+
+type loggerFn = func(ctx context.Context, msg string, args ...interface{})
+
+type loggerConn struct {
+	net.Conn
+	log loggerFn
+	ctx context.Context
+}
+
+var _ net.Conn = loggerConn{}
+
+func (lc loggerConn) Read(b []byte) (n int, err error) {
+	n, err = lc.Conn.Read(b)
+	lc.log(lc.ctx, "conn read", "b", b[:n], "n", n, "err", err)
+	return
+}
+
+func (lc loggerConn) Write(b []byte) (n int, err error) {
+	n, err = lc.Conn.Write(b)
+	lc.log(lc.ctx, "conn write", "b", b[:n], "n", n, "err", err)
+	return
 }
 
 // dial opens a websocket connection using the passed connection configuration
