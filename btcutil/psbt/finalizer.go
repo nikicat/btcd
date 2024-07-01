@@ -167,7 +167,7 @@ func isFinalizable(p *Packet, inIndex int) bool {
 // MaybeFinalize attempts to finalize the input at index inIndex in the PSBT p,
 // returning true with no error if it succeeds, OR if the input has already
 // been finalized.
-func MaybeFinalize(p *Packet, inIndex int) (bool, error) {
+func MaybeFinalize(p *Packet, inIndex int, getMultisigWitness MultisigWitnessFunc) (bool, error) {
 	if isFinalized(p, inIndex) {
 		return true, nil
 	}
@@ -176,7 +176,7 @@ func MaybeFinalize(p *Packet, inIndex int) (bool, error) {
 		return false, ErrNotFinalizable
 	}
 
-	if err := Finalize(p, inIndex); err != nil {
+	if err := Finalize(p, inIndex, getMultisigWitness); err != nil {
 		return false, err
 	}
 
@@ -185,9 +185,9 @@ func MaybeFinalize(p *Packet, inIndex int) (bool, error) {
 
 // MaybeFinalizeAll attempts to finalize all inputs of the psbt.Packet that are
 // not already finalized, and returns an error if it fails to do so.
-func MaybeFinalizeAll(p *Packet) error {
+func MaybeFinalizeAll(p *Packet, getMultisigWitness MultisigWitnessFunc) error {
 	for i := range p.UnsignedTx.TxIn {
-		success, err := MaybeFinalize(p, i)
+		success, err := MaybeFinalize(p, i, getMultisigWitness)
 		if err != nil || !success {
 			return err
 		}
@@ -203,8 +203,11 @@ func MaybeFinalizeAll(p *Packet) error {
 // 08. The witness/non-witness utxo fields in the inputs (key-types 00 and 01)
 // are left intact as they may be needed for validation (?).  If there is any
 // invalid or incomplete data, an error is returned.
-func Finalize(p *Packet, inIndex int) error {
+func Finalize(p *Packet, inIndex int, getMultisigWitness MultisigWitnessFunc) error {
 	pInput := p.Inputs[inIndex]
+	if getMultisigWitness == nil {
+		getMultisigWitness = defaultGetMultisigScriptWitness
+	}
 
 	// Depending on the UTXO type, we either attempt to finalize it as a
 	// witness or legacy UTXO.
@@ -219,7 +222,7 @@ func Finalize(p *Packet, inIndex int) error {
 			}
 
 		default:
-			if err := finalizeWitnessInput(p, inIndex); err != nil {
+			if err := finalizeWitnessInput(p, inIndex, getMultisigWitness); err != nil {
 				return err
 			}
 		}
@@ -359,11 +362,14 @@ func finalizeNonWitnessInput(p *Packet, inIndex int) error {
 	return nil
 }
 
+type MultisigWitnessFunc func(witnessScript []byte, pubKeys [][]byte,
+	sigs [][]byte) ([]byte, error)
+
 // finalizeWitnessInput attempts to create PsbtInFinalScriptSig field and
 // PsbtInFinalScriptWitness field for input at index inIndex, and removes all
 // other fields except for the utxo field, for an input of type witness, or
 // returns an error.
-func finalizeWitnessInput(p *Packet, inIndex int) error {
+func finalizeWitnessInput(p *Packet, inIndex int, getMultisigWitness MultisigWitnessFunc) error {
 	// If this input has already been finalized, then we'll return an error
 	// as we can't proceed.
 	if checkFinalScriptSigWitness(p, inIndex) {
@@ -434,7 +440,7 @@ func finalizeWitnessInput(p *Packet, inIndex int) error {
 				return ErrNotFinalizable
 			}
 
-			serializedWitness, err = getMultisigScriptWitness(
+			serializedWitness, err = getMultisigWitness(
 				pInput.WitnessScript, pubKeys, sigs,
 			)
 			if err != nil {
@@ -474,7 +480,7 @@ func finalizeWitnessInput(p *Packet, inIndex int) error {
 		} else {
 			// Otherwise, we assume that this is a p2wsh multi-sig,
 			// so we generate the proper witness.
-			serializedWitness, err = getMultisigScriptWitness(
+			serializedWitness, err = getMultisigWitness(
 				pInput.WitnessScript, pubKeys, sigs,
 			)
 			if err != nil {

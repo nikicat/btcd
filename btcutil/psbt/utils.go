@@ -148,11 +148,11 @@ func extractKeyOrderFromScript(script []byte, expectedPubkeys [][]byte,
 	return sortedSigs, nil
 }
 
-// getMultisigScriptWitness creates a full psbt serialized Witness field for
+// defaultGetMultisigScriptWitness creates a full psbt serialized Witness field for
 // the transaction, given the public keys and signatures to be appended. This
 // function will only accept witnessScripts of the type M of N multisig. This
 // is used for both p2wsh and nested p2wsh multisig cases.
-func getMultisigScriptWitness(witnessScript []byte, pubKeys [][]byte,
+func defaultGetMultisigScriptWitness(witnessScript []byte, pubKeys [][]byte,
 	sigs [][]byte) ([]byte, error) {
 
 	// First using the script as a guide, we'll properly order the sigs
