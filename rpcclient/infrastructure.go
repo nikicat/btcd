@@ -1364,6 +1364,8 @@ func (config *ConnConfig) retrieveCookie() (username, passphrase string, err err
 	return config.cookieLastUser, config.cookieLastPass, config.cookieLastErr
 }
 
+var LoggerContextKey = struct{}{}
+
 // newHTTPClient returns a new http client that is configured according to the
 // proxy and TLS settings in the associated connection configuration.
 func newHTTPClient(config *ConnConfig) (*http.Client, error) {
@@ -1397,13 +1399,13 @@ func newHTTPClient(config *ConnConfig) (*http.Client, error) {
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				dialer := net.Dialer{
 					ControlContext: func(ctx context.Context, network string, address string, c syscall.RawConn) error {
-						if logger, ok := ctx.Value("logger").(loggerFn); ok {
+						if logger, ok := ctx.Value(LoggerContextKey).(loggerFn); ok {
 							logger(ctx, "control", "network", network, "address", address)
 						}
 						return nil
 					},
 				}
-				logger, _ := ctx.Value("logger").(loggerFn)
+				logger, _ := ctx.Value(LoggerContextKey).(loggerFn)
 				var conn net.Conn
 				var err error
 				for i := 0; i < HttpPostRetries; i++ {
